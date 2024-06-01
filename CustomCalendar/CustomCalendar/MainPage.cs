@@ -16,7 +16,13 @@ namespace CustomCalendar
         {
             NavigationPage.SetHasNavigationBar(this, false);
 
-            _CalendarView.HasSelectedDate += (s, e) => { System.Diagnostics.Debug.WriteLine(e.SelectedDate.ToString("MM/dd/yyyy")); };
+            _CalendarView.HasSelectedDate += (s, e) => 
+            { 
+                System
+                    .Diagnostics
+                    .Debug
+                    .WriteLine(e.SelectedDate.ToString("MM/dd/yyyy")); 
+            };
 
             Content = _CalendarView;
         }
