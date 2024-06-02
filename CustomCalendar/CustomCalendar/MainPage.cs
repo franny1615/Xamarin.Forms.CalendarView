@@ -31,11 +31,16 @@ namespace CustomCalendar
         private readonly StackLayout _ContentLayout = new StackLayout()
         {
             Orientation = StackOrientation.Vertical,
+            VerticalOptions = LayoutOptions.Fill,
             Spacing = 16
         };
         private readonly ScrollView _ScrollView = new ScrollView()
         {
             Orientation = ScrollOrientation.Vertical,
+        };
+        private readonly Button _SwitchCalendar = new Button()
+        {
+            Text = "Current View: Month"
         };
 
         public MainPage()
@@ -46,6 +51,7 @@ namespace CustomCalendar
             _WeekView.HasSelectedDate += HasSelectedDate;   
             _DayView.HasSelectedDate += HasSelectedDate;
 
+            _ContentLayout.Children.Add(_SwitchCalendar);
             _ContentLayout.Children.Add(_CalendarView);
             _ContentLayout.Children.Add(_WeekView);
             _ContentLayout.Children.Add(_DayView);
@@ -53,6 +59,36 @@ namespace CustomCalendar
             _ScrollView.Content = _ContentLayout;
 
             Content = _ScrollView;
+
+            _SwitchCalendar.Clicked += async (s, e) =>
+            {
+                string choice = await DisplayActionSheet(
+                    "Change Calendar",
+                    "Pick One",
+                    "Cancel",
+                    new string[]
+                    {
+                        "Day",
+                        "Week",
+                        "Month"
+                    });
+                
+                if (choice == "Day")
+                {
+                    _CalendarView.CalendarViewType = CalendarViewType.Day;
+                    _SwitchCalendar.Text = "Current View: Day";
+                }
+                else if (choice == "Week")
+                {
+                    _CalendarView.CalendarViewType = CalendarViewType.Week;
+                    _SwitchCalendar.Text = "Current View: Week";
+                }
+                else if (choice == "Month")
+                {
+                    _CalendarView.CalendarViewType = CalendarViewType.Month;
+                    _SwitchCalendar.Text = "Current View: Month";
+                }
+            };
         }
 
         private void HasSelectedDate(object sender, CalendarViewEventArgs e)
