@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Xamarin.Essentials;
 using Xamarin.Forms;
@@ -10,14 +11,15 @@ namespace CustomCalendar
     {
         Month,
         Week,
-        Day
+        Day,
+        NotSet
     }
 
     public class CalendarViewEventArgs : EventArgs { public DateTime SelectedDate { get; set; } }
 
     public class CalendarView : ContentView
     {
-        public static readonly BindableProperty CalendarViewTypeProperty = BindableProperty.Create(nameof(CalendarViewType), typeof(CalendarViewType), typeof(CalendarView), CalendarViewType.Month);
+        public static readonly BindableProperty CalendarViewTypeProperty = BindableProperty.Create(nameof(CalendarViewType), typeof(CalendarViewType), typeof(CalendarView), CalendarViewType.NotSet);
         public CalendarViewType CalendarViewType { get => (CalendarViewType)GetValue(CalendarViewTypeProperty); set => SetValue(CalendarViewTypeProperty, value); }
 
         public event EventHandler<CalendarViewEventArgs> HasSelectedDate;
@@ -33,9 +35,9 @@ namespace CustomCalendar
         {
             ColumnDefinitions =
             {
-                new ColumnDefinition() { Width = new GridLength(0.3, GridUnitType.Star) },
-                new ColumnDefinition() { Width = new GridLength(0.4, GridUnitType.Star) },
-                new ColumnDefinition() { Width = new GridLength(0.3, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.25, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.5, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.25, GridUnitType.Star) },
             },
             ColumnSpacing = 0,
             Padding = new Thickness(0, 8, 0, 8)
@@ -56,7 +58,7 @@ namespace CustomCalendar
         private readonly Label _Previous = new Label()
         {
             Text = "<",
-            FontSize = 16,
+            FontSize = 14,
             TextColor = Color.White,
             FontAttributes = FontAttributes.Bold,
             HorizontalOptions = LayoutOptions.Center,
@@ -64,7 +66,7 @@ namespace CustomCalendar
         };
         private readonly Label _TitleLabel = new Label()
         {
-            FontSize = 24,
+            FontSize = 16,
             FontAttributes = FontAttributes.Bold,
             HorizontalOptions = LayoutOptions.Center,
             VerticalOptions = LayoutOptions.Center
@@ -116,6 +118,25 @@ namespace CustomCalendar
                 new RowDefinition() { Height = new GridLength(0.16, GridUnitType.Star) },
             }
         };
+        private readonly Grid _WeekContainer = new Grid()
+        {
+            VerticalOptions = LayoutOptions.Start,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition() { Width = new GridLength(0.14, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.14, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.14, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.14, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.14, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.14, GridUnitType.Star) },
+                new ColumnDefinition() { Width = new GridLength(0.14, GridUnitType.Star) },
+            },
+            RowDefinitions =
+            {
+                new RowDefinition() { Height = 16 },
+                new RowDefinition() { Height = new GridLength(0.16, GridUnitType.Star) },
+            }
+        };
         private readonly Grid _ContentLayout = new Grid()
         {
             RowSpacing = 16,
@@ -128,12 +149,13 @@ namespace CustomCalendar
 
         private readonly TapGestureRecognizer _PreviousTap = new TapGestureRecognizer() { NumberOfTapsRequired = 1 };
         private readonly TapGestureRecognizer _NextTap = new TapGestureRecognizer() { NumberOfTapsRequired = 1 };
-        private DateTime _CurrentDate;
+        private DateTime _CurrentDate = new DateTime(1970, 1, 1);
 
         public CalendarView()
         {
             Grid.SetRow(_TitleLayout, 0);
             Grid.SetRow(_FullMonthContainer, 1);
+            Grid.SetRow(_WeekContainer, 1);
 
             Grid.SetColumn(_PreviousFrame, 0);
             Grid.SetColumn(_TitleLabel, 1);
@@ -153,21 +175,43 @@ namespace CustomCalendar
 
             _PreviousFrame.GestureRecognizers.Add(_PreviousTap);
             _NextFrame.GestureRecognizers.Add(_NextTap);
-            _PreviousTap.Tapped += (s, e) => { PreviousMonth(); };
-            _NextTap.Tapped += (s, e) => { NextMonth(); };
-
-            Task.Run(async () =>
-            {
-                await Task.Delay(125);
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    SetupFullCalendar(DateTime.Today);
-                });
-            });
+            _PreviousTap.Tapped += (s, e) => { Previous(); };
+            _NextTap.Tapped += (s, e) => { Next(); };
         }
 
-        #region MONTH VIEW
-        private async void NextMonth()
+        protected override void OnPropertyChanged([CallerMemberName] string propertyName = "")
+        {
+            base.OnPropertyChanged(propertyName);
+            if (propertyName == CalendarViewTypeProperty.PropertyName)
+            {
+                _ContentLayout.Children.Remove(_FullMonthContainer);
+                _ContentLayout.Children.Remove(_WeekContainer);
+                _ContentLayout.RowDefinitions = new RowDefinitionCollection()
+                {
+                    new RowDefinition() { Height = 50 }
+                };
+                switch (CalendarViewType)  
+                {
+                    case CalendarViewType.Day:
+                        SetupDayView(SelectedDate == null ? DateTime.Today : SelectedDate);
+                        break;
+                    case CalendarViewType.Week:
+                        _ContentLayout.RowDefinitions.Add(new RowDefinition() { Height = 90 });
+                        _ContentLayout.Children.Add(_WeekContainer);
+                        _CurrentDate = SelectedDate == null ? DateTime.Today : SelectedDate;
+                        SetupWeekView(_CurrentDate);
+                        break;
+                    case CalendarViewType.Month:      
+                        _ContentLayout.RowDefinitions.Add(new RowDefinition() { Height = 300 });
+                        _ContentLayout.Children.Add(_FullMonthContainer);
+                        SetupFullCalendar(SelectedDate == null ? DateTime.Today : SelectedDate);
+                        break;
+                }
+            }
+        }
+
+        #region PREVIOUS/NEXT
+        private async void Next()
         {
             if (_CurrentDate == null)
                 return;
@@ -175,12 +219,30 @@ namespace CustomCalendar
             await _NextFrame.ScaleTo(0.95, 62);
             await _NextFrame.ScaleTo(1.0, 62);
 
-            DateTime firstDayOfMonth = new DateTime(_CurrentDate.Year, _CurrentDate.Month, 1);
-            DateTime lastDayOfMonth = firstDayOfMonth.AddMonths(1);
-            SetupFullCalendar(lastDayOfMonth);
+            switch (CalendarViewType)
+            {
+                case CalendarViewType.Day:
+                    var dateToCheck = SelectedDate == null ? DateTime.Today : SelectedDate;
+                    DateTime tomorrow = dateToCheck.AddDays(1);
+                    SetupDayView(tomorrow);
+                    SelectedDate = tomorrow;
+                    HasSelectedDate?.Invoke(this, new CalendarViewEventArgs() { SelectedDate = tomorrow });
+                    break;
+                case CalendarViewType.Week:
+                    var dtToCheck = _CurrentDate == new DateTime(1970, 1, 1) ? DateTime.Today : _CurrentDate;
+                    DateTime oneWeekFromNow = dtToCheck.AddDays(7);
+                    _CurrentDate = oneWeekFromNow;
+                    SetupWeekView(oneWeekFromNow);
+                    break;
+                case CalendarViewType.Month:
+                    DateTime firstDayOfMonth = new DateTime(_CurrentDate.Year, _CurrentDate.Month, 1);
+                    DateTime lastDayOfMonth = firstDayOfMonth.AddMonths(1);
+                    SetupFullCalendar(lastDayOfMonth);
+                    break;
+            }
         }
 
-        private async void PreviousMonth() 
+        private async void Previous()
         {
             if (_CurrentDate == null)
                 return;
@@ -188,10 +250,30 @@ namespace CustomCalendar
             await _PreviousFrame.ScaleTo(0.95, 62);
             await _PreviousFrame.ScaleTo(1.0, 62);
 
-            DateTime firstDayOfMonth = new DateTime(_CurrentDate.Year, _CurrentDate.Month, 1);
-            SetupFullCalendar(firstDayOfMonth.AddTicks(-1));
+            switch (CalendarViewType)
+            {
+                case CalendarViewType.Day:
+                    var dateToCheck = SelectedDate == null ? DateTime.Today : SelectedDate;
+                    DateTime yesterDay = dateToCheck.AddDays(-1);
+                    SetupDayView(yesterDay);
+                    SelectedDate = yesterDay;
+                    HasSelectedDate?.Invoke(this, new CalendarViewEventArgs() { SelectedDate = yesterDay });
+                    break;
+                case CalendarViewType.Week:
+                    var dtToCheck = _CurrentDate == new DateTime(1970, 1, 1) ? DateTime.Today : _CurrentDate;
+                    DateTime oneWeekPrior = dtToCheck.AddDays(-7);
+                    _CurrentDate = oneWeekPrior;
+                    SetupWeekView(oneWeekPrior);
+                    break;
+                case CalendarViewType.Month:
+                    DateTime firstDayOfMonth = new DateTime(_CurrentDate.Year, _CurrentDate.Month, 1);
+                    SetupFullCalendar(firstDayOfMonth.AddTicks(-1));
+                    break;
+            }
         }
+        #endregion
 
+        #region MONTH VIEW
         private void SetupFullCalendar(DateTime date)
         {
             if (date == null)
@@ -199,7 +281,7 @@ namespace CustomCalendar
 
             _CurrentDate = date;
 
-            _TitleLabel.Text = date.ToString("MMMM", CultureInfo.InvariantCulture);
+            _TitleLabel.Text = date.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
 
             _FullMonthContainer.Children.Clear();
             for (int i = 0; i < _AbbreviatedDateNames.Length; i++)
@@ -293,6 +375,134 @@ namespace CustomCalendar
                 else
                     currentColumn++;
             }
+        }
+        #endregion
+
+        #region WEEK VIEW
+        private void SetupWeekView(DateTime date)
+        {
+            if (date == null)
+                return;
+
+            int howFarBack = 0;
+            int howFarForward = 0;
+            string day = date.ToString("dddd", CultureInfo.InvariantCulture);
+            if (day.Equals("sunday", StringComparison.OrdinalIgnoreCase))
+            {
+                howFarBack = 0;
+                howFarForward = 6;
+            }
+            else if (day.Equals("monday", StringComparison.OrdinalIgnoreCase))
+            {
+                howFarBack = -1;
+                howFarForward = 5;
+            }
+            else if (day.Equals("tuesday", StringComparison.OrdinalIgnoreCase))
+            {
+                howFarBack = -2;
+                howFarForward = 4;
+            }
+            else if (day.Equals("wednesday", StringComparison.OrdinalIgnoreCase))
+            {
+                howFarBack = -3;
+                howFarForward = 3;
+            }
+            else if (day.Equals("thursday", StringComparison.OrdinalIgnoreCase))
+            {
+                howFarBack = -4;
+                howFarForward = 2;
+            }
+            else if (day.Equals("friday", StringComparison.OrdinalIgnoreCase))
+            {
+                howFarBack = -5;
+                howFarForward = 1;
+            }
+            else if (day.Equals("saturday", StringComparison.OrdinalIgnoreCase))
+            {
+                howFarBack = -6;
+                howFarForward = 0;
+            }
+            var startOfWeek = date.AddDays(howFarBack);
+            var endOfWeek = date.AddDays(howFarForward);
+
+            _TitleLabel.Text = $"{startOfWeek.ToString("MMM d")} - {endOfWeek.ToString("MMM d")}";
+
+            _WeekContainer.Children.Clear();
+            for (int i = 0; i < _AbbreviatedDateNames.Length; i++)
+            {
+                var dayLabel = new Label()
+                {
+                    FontSize = 12,
+                    FontAttributes = FontAttributes.Bold,
+                    Text = _AbbreviatedDateNames[i],
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center,
+                };
+                Grid.SetRow(dayLabel, 0);
+                Grid.SetColumn(dayLabel, i);
+                _WeekContainer.Children.Add(dayLabel);
+            }
+
+            var currentDay = startOfWeek.AddDays(0);
+            for (int i = 0; i < 7; i++)
+            {
+                bool itsToday = currentDay.Day == DateTime.Today.Day && date.Month == DateTime.Today.Month && date.Year == DateTime.Today.Year;
+                bool todayIsSelected = SelectedDate != null && SelectedDate.Month == date.Month && SelectedDate.Year == date.Year && SelectedDate.Day == currentDay.Day;
+                Color textColor = Color.FromHex("#646464");
+                Color bgColor = Color.Transparent;
+                if (itsToday)
+                    textColor = TodayTextColor != null ? TodayTextColor : Color.FromHex("#0077d7");
+                if (todayIsSelected)
+                {
+                    textColor = SelectedTextColor != null ? SelectedTextColor : Color.White;
+                    bgColor = SelectedDateBackgroundColor != null ? SelectedDateBackgroundColor : Color.FromHex("#0077d7");
+                }
+                var dayLabel = new Frame()
+                {
+                    BorderColor = Color.Transparent,
+                    BackgroundColor = bgColor,
+                    CornerRadius = 5,
+                    Padding = 8,
+                    HasShadow = false,
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center,
+                    Content = new Label()
+                    {
+                        FontSize = 14,
+                        FontAttributes = FontAttributes.Bold,
+                        Text = $"{currentDay.Day}",
+                        HorizontalOptions = LayoutOptions.Center,
+                        VerticalOptions = LayoutOptions.Center,
+                        TextColor = textColor
+                    }
+                };
+                var dayTap = new TapGestureRecognizer() { NumberOfTapsRequired = 1 };
+                dayTap.Tapped += (s, e) =>
+                {
+                    if (s is Frame dayContainer && 
+                        dayContainer.Content is Label dLabel && 
+                        int.TryParse(dLabel.Text, out int chosenDay))
+                    {
+                        var selectedDate = new DateTime(date.Year, date.Month, chosenDay);
+                        SelectedDate = selectedDate;
+                        HasSelectedDate?.Invoke(dayLabel, new CalendarViewEventArgs() { SelectedDate = selectedDate });
+                        SetupWeekView(_CurrentDate);
+                    }
+                };
+                dayLabel.GestureRecognizers.Add(dayTap);
+                Grid.SetRow(dayLabel, 1);
+                Grid.SetColumn(dayLabel, i);
+                _WeekContainer.Children.Add(dayLabel);
+
+                currentDay = currentDay.AddDays(1);
+            }
+        }
+        #endregion
+
+        #region DAY VIEW
+        private void SetupDayView(DateTime date)
+        {
+            _TitleLabel.Text = date.ToString("MMMM d, yyyy", CultureInfo.InvariantCulture);
         }
         #endregion
     }
